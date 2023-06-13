@@ -9,6 +9,17 @@ pub inline fn sub(a: u8, b: u8) u8 {
     return a ^ b;
 }
 
+pub fn generateMultiplicationTable(comptime size: usize) [size * size]u8 {
+    @setEvalBranchQuota(1_000_000);
+    var out_mult_table: [size * size]u8 = undefined;
+    inline for (0..size) |r| {
+        inline for (0..size) |c| {
+            out_mult_table[r * size + c] = mult(r, c);
+        }
+    }
+    return out_mult_table;
+}
+
 pub inline fn divide(a: u8, b: u8) u8 {
     assert(b != 0);
     if (a == 0)
