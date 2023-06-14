@@ -44,6 +44,12 @@ pub fn main() void {
     encoder.init();
     encoder.encode(&output_buffer);
 
+    var temp_buffer: [data_shard_size * parity_shard_count]u8 = undefined;
+    if (!encoder.verifyParity(&output_buffer, &temp_buffer)) {
+        std.log.err("Calculated parity not valid!", .{});
+        return;
+    }
+
     std.log.info("Encoder value: {d}", .{Encoder.encoding_matrix.buffer[4]});
 }
 
