@@ -4,6 +4,48 @@ const galois = @import("galois.zig");
 const matrix = @import("matrix.zig");
 const Matrix = matrix.Matrix;
 
+pub fn BitSet(comptime IntType: type) type {
+    return packed struct {
+        bits: IntType,
+
+        pub const init = @This(){ .bits = 0 };
+
+        pub inline fn isSet(self: @This(), index: usize) bool {
+            assert(index < @bitSizeOf(IntType));
+            return (self.bits & (@as(usize, 1) << @intCast(u6, index))) != 0;
+        }
+
+        pub inline fn set(self: *@This(), index: usize) void {
+            assert(index < @bitSizeOf(IntType));
+            self.bits |= (@as(usize, 1) << @intCast(u6, index));
+        }
+
+        pub inline fn noneSet(self: @This()) bool {
+            return self.bits == 0;
+        }
+    };
+}
+
+test "bitset" {
+    const expect = std.testing.expect;
+    var bitset = BitSet(u64).init;
+    for (0..64) |i| {
+        try expect(!bitset.isSet(i));
+    }
+
+    for (0..64) |i| {
+        if (i % 2 == 0)
+            bitset.set(i);
+    }
+
+    for (0..64) |i| {
+        if (i % 2 == 0)
+            try expect(bitset.isSet(i))
+        else
+            try expect(!bitset.isSet(i));
+    }
+}
+
 pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32) type {
     const total_shard_count = data_shard_count + parity_shard_count;
     assert(total_shard_count < 256);
