@@ -44,7 +44,7 @@ pub fn main() void {
     encoder.init();
     encoder.encode(&output_buffer);
 
-    std.log.info("Encoder value: {d}", .{Encoder.encoding_matrix[4]});
+    std.log.info("Encoder value: {d}", .{Encoder.encoding_matrix.buffer[4]});
 }
 
 fn generateTestData(comptime size: usize) [size]u8 {
