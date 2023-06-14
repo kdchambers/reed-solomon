@@ -46,11 +46,32 @@ test "bitset" {
     }
 }
 
+pub const ShardBuffer = struct {
+    shard_size: usize,
+    count: usize,
+    buffer: []u8,
+
+    pub inline fn getShardMut(self: *@This(), index: usize) []u8 {
+        assert(index < self.count);
+        const shard_begin: usize = self.shard_size * index;
+        const shard_end: usize = shard_begin + self.shard_size;
+        return self.buffer[shard_begin..shard_end];
+    }
+
+    pub inline fn getShard(self: @This(), index: usize) []const u8 {
+        assert(index < self.count);
+        const shard_begin: usize = self.shard_size * index;
+        const shard_end: usize = shard_begin + self.shard_size;
+        return self.buffer[shard_begin..shard_end];
+    }
+};
+
 pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32) type {
     const total_shard_count = data_shard_count + parity_shard_count;
     assert(total_shard_count < 256);
     return struct {
         pub const encoding_matrix = generateEncodingMatrix(data_shard_count, total_shard_count);
+        const mult_table = galois.generateMultiplicationTable(256);
 
         parity_rows: [parity_shard_count][]const u8,
 
@@ -68,65 +89,34 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
         ///
         /// `inout_buffer` contains the data shards and enough space to write the parity shards
         ///
-        pub fn encode(self: *@This(), inout_buffer: []u8) void {
-            @setEvalBranchQuota(20_000);
-            //
-            // Data and Parity shards are the same size in bytes, we simply take the length
-            // of the buffer and divide it by the total number of shards that the Encoder was
-            // configured to use
-            //
-            const shard_size = @divExact(inout_buffer.len, total_shard_count);
-            const data_shards_size: usize = shard_size * data_shard_count;
-            //
-            // Parity shards are stored at the end of the buffer, after all of the data shards
-            //
-            const parity_offset = data_shards_size;
-            const mult_table = galois.generateMultiplicationTable(256);
-
-            //
-            // For ease of use, create an array of slices to the last `parity_shard_count`
-            // shards in inout_buffer. These correspond to the parity shards to be computed
-            //
-            assert(parity_shard_count == 2);
-            var parity_shards: [parity_shard_count][]u8 = blk: {
-                var result: [parity_shard_count][]u8 = undefined;
-                inline for (0..parity_shard_count) |parity_i| {
-                    assert(parity_i < parity_shard_count);
-                    const index: usize = parity_offset + (shard_size * parity_i);
-                    result[parity_i] = inout_buffer[index .. index + shard_size];
-                }
-                break :blk result;
-            };
-            assert(parity_shards[0].len == shard_size);
-
-            //
-            // Do the same with the data shards
-            //
-            const data_shards: [data_shard_count][]const u8 = blk: {
-                var result: [data_shard_count][]u8 = undefined;
-                inline for (0..data_shard_count) |data_i| {
-                    const index: usize = shard_size * data_i;
-                    result[data_i] = inout_buffer[index .. index + shard_size];
-                }
-                break :blk result;
-            };
-            assert(data_shards[0].len == shard_size);
-
-            //
-            // Loop on each parity shard that we need to calculate the value for
-            //
-            inline for (&parity_shards, 0..) |*parity_shard, parity_i| {
-                const parity_row: []const u8 = self.parity_rows[parity_i];
-                {
-                    const mult_table_row = mult_table[parity_row[0] .. parity_row[0] + @as(usize, 256)];
-                    for (0..shard_size) |byte_i| {
-                        parity_shard.*[byte_i] = mult_table_row[data_shards[0][byte_i]];
+        pub fn encode(self: *@This(), shard_buffer: *ShardBuffer) void {
+            _ = self;
+            {
+                const data_i: usize = 0;
+                const input_shard = shard_buffer.getShard(data_i);
+                for (0..parity_shard_count) |parity_i| {
+                    var parity_shard = shard_buffer.getShardMut(data_shard_count + parity_i);
+                    const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
+                    const mult_table_index: usize = encoding_matrix_parity_row[0] * @as(usize, 256);
+                    const mult_table_row = mult_table[mult_table_index .. mult_table_index + @as(usize, 256)];
+                    for (0..shard_buffer.shard_size) |i| {
+                        parity_shard[i] = mult_table_row[input_shard[i]];
                     }
                 }
-                inline for (data_shards[1..], 1..) |data_shard, data_i| {
-                    const mult_table_row = mult_table[parity_row[data_i] .. parity_row[data_i] + @as(usize, 256)];
-                    for (0..shard_size) |byte_i| {
-                        parity_shard.*[byte_i] ^= mult_table_row[data_shard[byte_i]];
+            }
+            {
+                for (1..data_shard_count) |data_i| {
+                    const input_shard = shard_buffer.getShard(data_i);
+                    for (0..parity_shard_count) |parity_i| {
+                        var parity_shard = shard_buffer.getShardMut(data_shard_count + parity_i);
+                        const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
+                        const mult_table_row_index: usize = encoding_matrix_parity_row[data_i];
+                        const columns_per_table: usize = 256;
+                        const mult_table_index: usize = mult_table_row_index * columns_per_table;
+                        const mult_table_row = mult_table[mult_table_index .. mult_table_index + columns_per_table];
+                        for (0..shard_buffer.shard_size) |i| {
+                            parity_shard[i] ^= mult_table_row[input_shard[i]];
+                        }
                     }
                 }
             }
@@ -139,21 +129,18 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
         ///                 to `data_shard_count` and `parity_shard_count` for this Encoder.
         /// `temp_buffer`: A buffer with enough space to hold a single shard. I.e (data_bytes / total_shard_count)
         ///                The buffers contents may be uninitialized
-        pub fn verifyParity(self: *@This(), shard_buffer: []const u8, temp_buffer: []u8) bool {
+        pub fn verifyParity(self: *@This(), shard_buffer: *const ShardBuffer, temp_buffer: []u8) bool {
             @setEvalBranchQuota(20_000);
 
-            const shard_size = @divExact(shard_buffer.len, total_shard_count);
+            const shard_size = shard_buffer.shard_size;
             const data_shards_size: usize = shard_size * data_shard_count;
-            const parity_offset = data_shards_size;
-            const mult_table = galois.generateMultiplicationTable(256);
+            _ = data_shards_size;
 
             assert(parity_shard_count == 2);
             var parity_shards: [parity_shard_count][]const u8 = blk: {
                 var result: [parity_shard_count][]const u8 = undefined;
                 inline for (0..parity_shard_count) |parity_i| {
-                    assert(parity_i < parity_shard_count);
-                    const index: usize = parity_offset + (shard_size * parity_i);
-                    result[parity_i] = shard_buffer[index .. index + shard_size];
+                    result[parity_i] = shard_buffer.getShard(data_shard_count + parity_i);
                 }
                 break :blk result;
             };
@@ -173,8 +160,7 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
             const data_shards: [data_shard_count][]const u8 = blk: {
                 var result: [data_shard_count][]const u8 = undefined;
                 inline for (0..data_shard_count) |data_i| {
-                    const index: usize = shard_size * data_i;
-                    result[data_i] = shard_buffer[index .. index + shard_size];
+                    result[data_i] = shard_buffer.getShard(data_i);
                 }
                 break :blk result;
             };
@@ -211,12 +197,5 @@ fn generateEncodingMatrix(comptime data_shard_count: comptime_int, comptime tota
     const vandermonde_matrix = matrix.generateVanderMondeMatrix(total_shard_count, data_shard_count);
     const matrix_top = vandermonde_matrix.truncateRows(data_shard_count);
     const matrix_top_inverted = matrix.inverseOf(data_shard_count, matrix_top);
-    return matrix.multArray(
-        total_shard_count,
-        data_shard_count,
-        data_shard_count,
-        data_shard_count,
-        vandermonde_matrix,
-        matrix_top_inverted,
-    );
+    return matrix.multiply(vandermonde_matrix, matrix_top_inverted);
 }

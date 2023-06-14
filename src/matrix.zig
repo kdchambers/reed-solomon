@@ -66,11 +66,11 @@ pub fn Matrix(comptime rows: usize, comptime cols: usize) type {
             @setEvalBranchQuota(20_000);
             assert(col_count >= row_count);
             for (0..row_count) |r| {
-                const diagnal_index: usize = r * col_count + r;
+                const diagnal_index: usize = (r * col_count) + r;
                 if (self.buffer[diagnal_index] == 0) {
                     inner: for (r + 1..row_count) |row_below| {
-                        if (self.buffer[row_below * col_count + r] != 0) {
-                            swapRows(row_count, col_count, self.buffer, r, row_below);
+                        if (self.get(row_below, r) != 0) {
+                            self.swapRows(r, row_below);
                             break :inner;
                         }
                     }
@@ -110,13 +110,14 @@ pub fn Matrix(comptime rows: usize, comptime cols: usize) type {
 
         pub fn log(self: @This()) void {
             const print = std.debug.print;
-            print("\n", .{});
             inline for (0..row_count) |r| {
+                print("  ", .{});
                 inline for (0..col_count) |c| {
                     print("{d} ", .{self.buffer[r * col_count + c]});
                 }
                 print("\n", .{});
             }
+            print("\n", .{});
         }
     };
 }
@@ -174,7 +175,7 @@ pub inline fn inverseOf(
     var out_matrix: Matrix(size, size) = undefined;
     inline for (0..size) |r| {
         const dst_index = r * size;
-        const src_index = r * size * 2;
+        const src_index = size + (r * size * 2);
         @memcpy(out_matrix.buffer[dst_index .. dst_index + size], working_matrix.buffer[src_index .. src_index + size]);
     }
     return out_matrix;
@@ -202,6 +203,23 @@ pub inline fn multArray(
         }
     }
     return out_matrix;
+}
+
+pub inline fn multiply(left: anytype, right: anytype) Matrix(@TypeOf(left).row_count, @TypeOf(right).col_count) {
+    const LeftT = @TypeOf(left);
+    const RightT = @TypeOf(right);
+    assert(LeftT.col_count == RightT.row_count);
+    var out: Matrix(LeftT.row_count, RightT.col_count) = undefined;
+    inline for (0..LeftT.row_count) |r| {
+        inline for (0..RightT.col_count) |c| {
+            var accum: u8 = 0;
+            inline for (0..LeftT.col_count) |i| {
+                accum ^= galois.mult(left.get(r, i), right.get(i, c));
+            }
+            out.set(r, c, accum);
+        }
+    }
+    return out;
 }
 
 pub fn generateVanderMondeMatrix(comptime row_count: comptime_int, comptime col_count: comptime_int) Matrix(row_count, col_count) {
