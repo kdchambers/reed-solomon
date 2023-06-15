@@ -3,7 +3,8 @@ const assert = std.debug.assert;
 const rs = @import("reedsolomon");
 const BitSet = rs.BitSet;
 
-pub fn main() void {
+test "recompute missing shards" {
+    const expect = std.testing.expect;
     const data_shard_count = 4;
     const parity_shard_count = 2;
     const total_shard_count = data_shard_count + parity_shard_count;
@@ -42,6 +43,7 @@ pub fn main() void {
     }
 
     var encoder: Encoder = undefined;
+
     encoder.init();
     encoder.encode(&shard_buffer);
 
@@ -52,10 +54,10 @@ pub fn main() void {
         .buffer = &temp_parity_shard_buffer,
     };
 
-    if (!encoder.verifyParity(&shard_buffer, &temp_parity_shards)) {
-        std.log.err("Calculated parity not valid!", .{});
-        return;
-    }
+    //
+    // Parity should be correct
+    //
+    try expect(encoder.verifyParity(&shard_buffer, &temp_parity_shards));
 
     var shards_copy_buffer: [shard_buffer_size]u8 = undefined;
     var shards_copy = rs.ShardBuffer{
@@ -79,9 +81,7 @@ pub fn main() void {
     //
     try encoder.reconstruct(&shards_copy, missing_bitset);
 
-    if (!std.mem.eql(u8, shards_copy.buffer, shard_buffer.buffer)) {
-        std.log.err("Failed to reconstruct original shards", .{});
-    }
+    try expect(std.mem.eql(u8, shards_copy.buffer, shard_buffer.buffer));
 }
 
 fn generateTestData(comptime size: usize) [size]u8 {

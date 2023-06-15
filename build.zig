@@ -11,7 +11,7 @@ pub fn build(b: *Build) void {
         .path = "src/reedsolomon.zig",
     } });
 
-    const test_exe = b.addExecutable(.{
+    const test_exe = b.addTest(.{
         .name = "test",
         .root_source_file = .{ .path = "test/all_tests.zig" },
         .target = target,
