@@ -6,10 +6,11 @@ const print = std.debug.print;
 const data_shard_count = 17;
 const parity_shard_count = 3;
 const total_shard_count = data_shard_count + parity_shard_count;
+
 const block_size: usize = 200 * 1000;
 const processor_cache_size = 10 * 1024 * 1024;
 const shard_buffer_count: usize = ((processor_cache_size * 2) / data_shard_count) / (block_size + 1);
-const run_count: usize = 2;
+const run_count: usize = 8;
 
 var shard_buffer: [shard_buffer_count]rs.ShardBuffer = undefined;
 
@@ -66,13 +67,13 @@ fn runBenchmark() !void {
             print("Run {d:1} :: {d:.2} Gib / sec\n", .{ run_i, gib_per_sec });
         } else if (bytes_processed_count >= bytes_per_mib) {
             const mib_per_sec: f64 = (@intToFloat(f64, bytes_processed_count) / bytes_per_mib) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} Gib / sec\n", .{ run_i, mib_per_sec });
+            print("Run {d:2} :: {d:.2} Mib / sec\n", .{ run_i, mib_per_sec });
         } else if (bytes_processed_count >= bytes_per_kib) {
             const kib_per_sec: f64 = (@intToFloat(f64, bytes_processed_count) / bytes_per_kib) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} Gib / sec\n", .{ run_i, kib_per_sec });
+            print("Run {d:2} :: {d:.2} Kib / sec\n", .{ run_i, kib_per_sec });
         } else {
             const kib_per_sec: f64 = @intToFloat(f64, bytes_processed_count) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} Gib / sec\n", .{ run_i, kib_per_sec });
+            print("Run {d:2} :: {d:.2} bytes / sec\n", .{ run_i, kib_per_sec });
         }
     }
 }
