@@ -206,6 +206,7 @@ pub inline fn multArray(
 }
 
 pub inline fn multiply(left: anytype, right: anytype) Matrix(@TypeOf(left).row_count, @TypeOf(right).col_count) {
+    @setEvalBranchQuota(1_000_000);
     const LeftT = @TypeOf(left);
     const RightT = @TypeOf(right);
     assert(LeftT.col_count == RightT.row_count);
