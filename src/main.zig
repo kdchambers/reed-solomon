@@ -1,14 +1,14 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const solomon_reed = @import("solomon_reed.zig");
-const BitSet = solomon_reed.BitSet;
+const rs = @import("reedsolomon.zig");
+const BitSet = rs.BitSet;
 
 pub fn main() void {
     const data_shard_count = 4;
     const parity_shard_count = 2;
     const total_shard_count = data_shard_count + parity_shard_count;
 
-    const Encoder = solomon_reed.Encoder(data_shard_count, parity_shard_count);
+    const Encoder = rs.Encoder(data_shard_count, parity_shard_count);
 
     const input_size_bytes: usize = 64;
     const input_data = generateTestData(input_size_bytes);
@@ -22,7 +22,7 @@ pub fn main() void {
     const shard_buffer_size = shard_size * total_shard_count;
 
     var input_buffer = [1]u8{0} ** shard_buffer_size;
-    var shard_buffer = solomon_reed.ShardBuffer{
+    var shard_buffer = rs.ShardBuffer{
         .count = total_shard_count,
         .shard_size = shard_size,
         .buffer = &input_buffer,
@@ -46,7 +46,7 @@ pub fn main() void {
     encoder.encode(&shard_buffer);
 
     var temp_parity_shard_buffer: [shard_size * parity_shard_count]u8 = undefined;
-    var temp_parity_shards = solomon_reed.ShardBuffer{
+    var temp_parity_shards = rs.ShardBuffer{
         .count = parity_shard_count,
         .shard_size = shard_size,
         .buffer = &temp_parity_shard_buffer,
@@ -58,7 +58,7 @@ pub fn main() void {
     }
 
     var shards_copy_buffer: [shard_buffer_size]u8 = undefined;
-    var shards_copy = solomon_reed.ShardBuffer{
+    var shards_copy = rs.ShardBuffer{
         .shard_size = shard_buffer.shard_size,
         .count = shard_buffer.count,
         .buffer = &shards_copy_buffer,
