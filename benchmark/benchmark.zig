@@ -48,6 +48,13 @@ fn runBenchmark() !void {
     const max_run_duration_s = 2;
     const max_run_duration = max_run_duration_s * std.time.ns_per_s;
 
+    print("Benchmark: Parity Calculation\n", .{});
+    print("  Unique data:   {d} Kib\n", .{(shard_buffer_count * block_size) / 1024});
+    print("  Data shards:   {d}\n", .{data_shard_count});
+    print("  Parity shards: {d}\n", .{parity_shard_count});
+    print("  Run count:     {d}\n", .{run_count});
+    print("  Run duration:  {d} secs\n", .{max_run_duration_s});
+
     for (0..run_count) |run_i| {
         var time_encoding: u64 = 0;
         var bytes_processed_count: u64 = 0;
