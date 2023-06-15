@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const solomon_reed = @import("solomon_reed.zig");
+const BitSet = solomon_reed.BitSet;
 
 pub fn main() void {
     const data_shard_count = 4;
@@ -11,52 +12,82 @@ pub fn main() void {
 
     const input_size_bytes: usize = 64;
     const input_data = generateTestData(input_size_bytes);
-    //
-    // TODO: We're doing an even division just for simplicity but in the case
-    //       it doesn't divide evenly we have to round up
-    //
-    const data_shard_size = @divExact(input_size_bytes, data_shard_count);
 
     //
     // Size of each shard when we include the parity shards
     //
-    const total_shard_size = @divExact(data_shard_size, data_shard_count) * total_shard_count;
-    assert(total_shard_size == 24);
+    const shard_size = @divExact(input_size_bytes, data_shard_count);
+    assert(shard_size == 16);
 
-    const output_size_bytes = total_shard_size * data_shard_count;
-    assert(output_size_bytes == 96);
-    var output_buffer = [1]u8{0} ** output_size_bytes;
+    const shard_buffer_size = shard_size * total_shard_count;
+
+    var input_buffer = [1]u8{0} ** shard_buffer_size;
+    var shard_buffer = solomon_reed.ShardBuffer{
+        .count = total_shard_count,
+        .shard_size = shard_size,
+        .buffer = &input_buffer,
+    };
+    assert(shard_buffer.buffer.len == (shard_buffer.count * shard_buffer.shard_size));
 
     //
     // Copy the input data into our output buffer leaving space for the
     // parity shards are the end of each data shard
     //
     for (0..data_shard_count) |i| {
-        const src_index: usize = i * data_shard_size;
-        const dst_index: usize = i * total_shard_count;
+        const src_index: usize = i * shard_size;
         @memcpy(
-            output_buffer[dst_index .. dst_index + data_shard_size],
-            input_data[src_index .. src_index + data_shard_size],
+            shard_buffer.getShardMut(i),
+            input_data[src_index .. src_index + shard_size],
         );
     }
 
     var encoder: Encoder = undefined;
     encoder.init();
-    encoder.encode(&output_buffer);
+    encoder.encode(&shard_buffer);
 
-    var temp_buffer: [data_shard_size * parity_shard_count]u8 = undefined;
-    if (!encoder.verifyParity(&output_buffer, &temp_buffer)) {
+    var temp_parity_shard_buffer: [shard_size * parity_shard_count]u8 = undefined;
+    var temp_parity_shards = solomon_reed.ShardBuffer{
+        .count = parity_shard_count,
+        .shard_size = shard_size,
+        .buffer = &temp_parity_shard_buffer,
+    };
+
+    if (!encoder.verifyParity(&shard_buffer, &temp_parity_shards)) {
         std.log.err("Calculated parity not valid!", .{});
         return;
     }
 
-    std.log.info("Encoder value: {d}", .{Encoder.encoding_matrix.buffer[4]});
+    var shards_copy_buffer: [shard_buffer_size]u8 = undefined;
+    var shards_copy = solomon_reed.ShardBuffer{
+        .shard_size = shard_buffer.shard_size,
+        .count = shard_buffer.count,
+        .buffer = &shards_copy_buffer,
+    };
+    @memcpy(shards_copy.buffer, shard_buffer.buffer);
+
+    var missing_bitset = BitSet(u64).init;
+    missing_bitset.set(1);
+    @memset(shards_copy.buffer[shard_size .. shard_size * 2], 0);
+
+    //
+    // Assert our copy of the shard buffer has been modified
+    //
+    assert(!std.mem.eql(u8, shards_copy.buffer, shard_buffer.buffer));
+
+    //
+    // Reconstruct the data and parity shards
+    //
+    try encoder.reconstruct(&shards_copy, missing_bitset);
+
+    if (!std.mem.eql(u8, shards_copy.buffer, shard_buffer.buffer)) {
+        std.log.err("Failed to reconstruct original shards", .{});
+    }
 }
 
 fn generateTestData(comptime size: usize) [size]u8 {
     var out_buffer: [size]u8 = undefined;
     for (0..size) |i| {
-        out_buffer[i] = @intCast(u8, @mod((size - i) * i, 255));
+        out_buffer[i] = @intCast(u8, i * 2);
     }
     return out_buffer;
 }

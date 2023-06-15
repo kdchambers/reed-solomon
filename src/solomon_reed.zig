@@ -174,6 +174,75 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
 
             return true;
         }
+
+        pub fn reconstruct(self: *@This(), shard_buffer: *ShardBuffer, missing: BitSet(u64)) !void {
+            _ = self;
+            if (missing.noneSet()) {
+                //
+                // No shards marked as missing, nothing to do
+                //
+                return;
+            }
+
+            var sub_matrix: Matrix(data_shard_count, data_shard_count) = undefined;
+            var sub_shards: [data_shard_count][]const u8 = undefined;
+            {
+                var sub_matrix_row: usize = 0;
+                var matrix_row: usize = 0;
+                while (matrix_row < total_shard_count and sub_matrix_row < data_shard_count) {
+                    if (!missing.isSet(matrix_row)) {
+                        for (0..data_shard_count) |c| {
+                            sub_matrix.set(sub_matrix_row, c, encoding_matrix.get(matrix_row, c));
+                        }
+                        const shard_begin: usize = shard_buffer.shard_size * matrix_row;
+                        const shard_end: usize = shard_begin + shard_buffer.shard_size;
+                        sub_shards[sub_matrix_row] = shard_buffer.buffer[shard_begin..shard_end];
+                        assert(sub_shards[sub_matrix_row].len == shard_buffer.shard_size);
+                        sub_matrix_row += 1;
+                    }
+                    matrix_row += 1;
+                }
+                assert(sub_matrix_row > 0);
+            }
+
+            const data_decode_matrix = matrix.inverseOf(data_shard_count, sub_matrix);
+
+            var missing_data_shards: [parity_shard_count][]u8 = undefined;
+            var parity_rows: [parity_shard_count][]const u8 = undefined;
+            var output_count: usize = 0;
+            for (0..data_shard_count) |input_i| {
+                if (missing.isSet(input_i)) {
+                    const shard_begin: usize = shard_buffer.shard_size * input_i;
+                    const shard_end: usize = shard_begin + shard_buffer.shard_size;
+                    missing_data_shards[output_count] = shard_buffer.buffer[shard_begin..shard_end];
+                    const parity_row_begin: usize = input_i * @TypeOf(data_decode_matrix).col_count;
+                    const parity_row_end: usize = parity_row_begin + @TypeOf(data_decode_matrix).col_count;
+                    parity_rows[output_count] = data_decode_matrix.buffer[parity_row_begin..parity_row_end];
+                    output_count += 1;
+                }
+            }
+
+            for (missing_data_shards[0..output_count], 0..) |*output_shard, output_i| {
+                {
+                    const data_i: usize = 0;
+                    const encoding_matrix_parity_row = parity_rows[output_i];
+                    const mult_table_index: usize = encoding_matrix_parity_row[data_i] * @as(usize, 256);
+                    const mult_table_row = mult_table[mult_table_index .. mult_table_index + @as(usize, 256)];
+                    for (0..shard_buffer.shard_size) |byte_i| {
+                        const lookup_index = sub_shards[0][byte_i];
+                        output_shard.*[byte_i] = mult_table_row[lookup_index];
+                    }
+                }
+                inline for (sub_shards[1..], 1..) |data_shard, data_i| {
+                    const encoding_matrix_parity_row = parity_rows[output_i];
+                    const mult_table_index: usize = encoding_matrix_parity_row[data_i] * @as(usize, 256);
+                    const mult_table_row = mult_table[mult_table_index .. mult_table_index + @as(usize, 256)];
+                    for (0..shard_buffer.shard_size) |byte_i| {
+                        output_shard.*[byte_i] ^= mult_table_row[data_shard[byte_i]];
+                    }
+                }
+            }
+        }
     };
 }
 
