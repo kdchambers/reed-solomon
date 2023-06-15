@@ -7,26 +7,32 @@ pub fn build(b: *Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "reed_solomon_test",
-        .root_source_file = .{ .path = "src/main.zig" },
+    const reedsolomon_module = b.addModule("reedsolomon", .{ .source_file = .{
+        .path = "src/reedsolomon.zig",
+    } });
+
+    const test_exe = b.addExecutable(.{
+        .name = "test",
+        .root_source_file = .{ .path = "test/all_tests.zig" },
         .target = target,
         .optimize = optimize,
     });
+    test_exe.addModule("reedsolomon", reedsolomon_module);
 
-    b.installArtifact(exe);
-    const run_cmd = b.addRunArtifact(exe);
+    b.installArtifact(test_exe);
+    const run_cmd = b.addRunArtifact(test_exe);
 
-    const run_step = b.step("run", "Run example reed-solomon encoder");
+    const run_step = b.step("test", "Run tests");
     run_step.dependOn(&run_cmd.step);
 
     const benchmark_exe = b.addExecutable(.{
         .name = "benchmark",
-        .root_source_file = .{ .path = "src/benchmark.zig" },
+        .root_source_file = .{ .path = "benchmark/benchmark.zig" },
         .target = target,
         .optimize = optimize,
     });
     benchmark_exe.linkLibC();
+    benchmark_exe.addModule("reedsolomon", reedsolomon_module);
 
     b.installArtifact(benchmark_exe);
     const run_benchmark_cmd = b.addRunArtifact(benchmark_exe);

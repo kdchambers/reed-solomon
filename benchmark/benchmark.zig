@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const rs = @import("reedsolomon.zig");
+const rs = @import("reedsolomon");
 const print = std.debug.print;
 
 const data_shard_count = 17;
