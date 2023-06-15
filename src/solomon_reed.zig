@@ -127,67 +127,51 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
         /// true if the parity shards match, otherwise false
         /// `shard_buffer`: Contains both valid data and parity shards in form [d .. d p .. p] according
         ///                 to `data_shard_count` and `parity_shard_count` for this Encoder.
-        /// `temp_buffer`: A buffer with enough space to hold a single shard. I.e (data_bytes / total_shard_count)
-        ///                The buffers contents may be uninitialized
-        pub fn verifyParity(self: *@This(), shard_buffer: *const ShardBuffer, temp_buffer: []u8) bool {
-            @setEvalBranchQuota(20_000);
-
-            const shard_size = shard_buffer.shard_size;
-            const data_shards_size: usize = shard_size * data_shard_count;
-            _ = data_shards_size;
-
-            assert(parity_shard_count == 2);
-            var parity_shards: [parity_shard_count][]const u8 = blk: {
-                var result: [parity_shard_count][]const u8 = undefined;
-                inline for (0..parity_shard_count) |parity_i| {
-                    result[parity_i] = shard_buffer.getShard(data_shard_count + parity_i);
-                }
-                break :blk result;
-            };
-            assert(parity_shards[0].len == shard_size);
-
-            var recalculated_parity_shards: [parity_shard_count][]u8 = blk: {
-                var result: [parity_shard_count][]u8 = undefined;
-                inline for (0..parity_shard_count) |parity_i| {
-                    assert(parity_i < parity_shard_count);
-                    const index: usize = shard_size * parity_i;
-                    result[parity_i] = temp_buffer[index .. index + shard_size];
-                }
-                break :blk result;
-            };
-            assert(recalculated_parity_shards[0].len == shard_size);
-
-            const data_shards: [data_shard_count][]const u8 = blk: {
-                var result: [data_shard_count][]const u8 = undefined;
-                inline for (0..data_shard_count) |data_i| {
-                    result[data_i] = shard_buffer.getShard(data_i);
-                }
-                break :blk result;
-            };
-            assert(data_shards[0].len == shard_size);
-
-            inline for (&recalculated_parity_shards, 0..) |*recalc_parity_shard, parity_i| {
-                const parity_row: []const u8 = self.parity_rows[parity_i];
-                {
-                    const mult_table_row = mult_table[parity_row[0] .. parity_row[0] + @as(usize, 256)];
-                    for (0..shard_size) |byte_i| {
-                        recalc_parity_shard.*[byte_i] = mult_table_row[data_shards[0][byte_i]];
+        /// `parity_shard_buffer`: A buffer with enough space to hold `parity_shard_count` which will be
+        ///                        used to store the recomputed parity shards
+        pub fn verifyParity(self: *@This(), shard_buffer: *const ShardBuffer, parity_shard_buffer: *ShardBuffer) bool {
+            _ = self;
+            {
+                const data_i: usize = 0;
+                const input_shard = shard_buffer.getShard(data_i);
+                for (0..parity_shard_count) |parity_i| {
+                    var parity_shard = parity_shard_buffer.getShardMut(parity_i);
+                    const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
+                    const mult_table_index: usize = encoding_matrix_parity_row[0] * @as(usize, 256);
+                    const mult_table_row = mult_table[mult_table_index .. mult_table_index + @as(usize, 256)];
+                    for (0..shard_buffer.shard_size) |i| {
+                        parity_shard[i] = mult_table_row[input_shard[i]];
                     }
                 }
-                inline for (data_shards[1..], 1..) |data_shard, data_i| {
-                    const mult_table_row = mult_table[parity_row[data_i] .. parity_row[data_i] + @as(usize, 256)];
-                    for (0..shard_size) |byte_i| {
-                        recalc_parity_shard.*[byte_i] ^= mult_table_row[data_shard[byte_i]];
+            }
+            {
+                for (1..data_shard_count) |data_i| {
+                    const input_shard = shard_buffer.getShard(data_i);
+                    for (0..parity_shard_count) |parity_i| {
+                        var parity_shard = parity_shard_buffer.getShardMut(parity_i);
+                        const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
+                        const mult_table_row_index: usize = encoding_matrix_parity_row[data_i];
+                        const columns_per_table: usize = 256;
+                        const mult_table_index: usize = mult_table_row_index * columns_per_table;
+                        const mult_table_row = mult_table[mult_table_index .. mult_table_index + columns_per_table];
+                        for (0..shard_buffer.shard_size) |i| {
+                            parity_shard[i] ^= mult_table_row[input_shard[i]];
+                        }
                     }
                 }
-                //
-                // Check whether the parity shard we just calculated matches what already
-                // exists in `shard_buffer`.
-                //
-                if (!std.mem.eql(u8, recalc_parity_shard.*, parity_shards[parity_i])) {
+            }
+
+            //
+            // Compare the parity shards we were given with the ones we just (re) calculated
+            //
+            inline for (0..parity_shard_count) |parity_i| {
+                const parity_shard = shard_buffer.getShard(data_shard_count + parity_i);
+                const recalculated_parity_shard = parity_shard_buffer.getShard(parity_i);
+                if (!std.mem.eql(u8, parity_shard, recalculated_parity_shard)) {
                     return false;
                 }
             }
+
             return true;
         }
     };

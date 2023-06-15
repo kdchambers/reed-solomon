@@ -4,8 +4,8 @@ const galois = @import("galois.zig");
 
 pub fn Matrix(comptime rows: usize, comptime cols: usize) type {
     return struct {
-        const row_count = rows;
-        const col_count = cols;
+        pub const row_count = rows;
+        pub const col_count = cols;
 
         buffer: [row_count * col_count]u8,
 
