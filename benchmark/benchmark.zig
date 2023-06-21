@@ -71,16 +71,16 @@ fn runBenchmark() !void {
 
         if (bytes_processed_count >= bytes_per_gib) {
             const gib_per_sec: f64 = (@intToFloat(f64, bytes_processed_count) / bytes_per_gib) / max_run_duration_s;
-            print("Run {d:1} :: {d:.2} Gib / sec\n", .{ run_i, gib_per_sec });
+            print("Run [{d:1}/{d:1}] :: {d:.2} Gib / sec\n", .{ run_i + 1, run_count, gib_per_sec });
         } else if (bytes_processed_count >= bytes_per_mib) {
             const mib_per_sec: f64 = (@intToFloat(f64, bytes_processed_count) / bytes_per_mib) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} Mib / sec\n", .{ run_i, mib_per_sec });
+            print("Run [{d:1}/{d:1}] :: {d:.2} Mib / sec\n", .{ run_i + 1, run_count, mib_per_sec });
         } else if (bytes_processed_count >= bytes_per_kib) {
             const kib_per_sec: f64 = (@intToFloat(f64, bytes_processed_count) / bytes_per_kib) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} Kib / sec\n", .{ run_i, kib_per_sec });
+            print("Run [{d:1}/{d:1}] :: {d:.2} Kib / sec\n", .{ run_i + 1, run_count, kib_per_sec });
         } else {
-            const kib_per_sec: f64 = @intToFloat(f64, bytes_processed_count) / max_run_duration_s;
-            print("Run {d:2} :: {d:.2} bytes / sec\n", .{ run_i, kib_per_sec });
+            const bytes_per_sec: f64 = @intToFloat(f64, bytes_processed_count) / max_run_duration_s;
+            print("Run [{d:1}/{d:1}] :: {d:.2} bytes / sec\n", .{ run_i + 1, run_count, bytes_per_sec });
         }
     }
 }
