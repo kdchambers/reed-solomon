@@ -75,12 +75,40 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
 
         parity_rows: [parity_shard_count][]const u8,
 
+        /// Given the size of an input buffer, calculate what size each shard should be
+        /// for this encoder
+        pub inline fn calculateShardSize(data_size: usize) usize {
+            const required_padding: usize = blk: {
+                const overshoot: usize = data_size % data_shard_count;
+                break :blk if (overshoot == 0) 0 else (data_shard_count - overshoot);
+            };
+            const padded_input_size: usize = data_size + required_padding;
+            assert(padded_input_size % data_shard_count == 0);
+            return @divExact(padded_input_size, data_shard_count);
+        }
+
         pub fn init(self: *@This()) void {
             for (&self.parity_rows, 0..) |*row, i| {
                 const row_start = (data_shard_count + i) * data_shard_count;
                 const row_end = row_start + data_shard_count;
                 row.* = encoding_matrix.buffer[row_start..row_end];
             }
+        }
+
+        /// Converts an input buffer into a ShardBuffer with enough space for the parity shards#
+        /// The ShardBuffer returned will be allocated and owned by the caller
+        pub fn split(allocator: std.mem.Allocator, input_buffer: []const u8) !ShardBuffer {
+            const shard_size = @This().calculateShardSize(input_buffer.len);
+            // TODO: Allocating a new buffer and copying everything across is awful and unneccesary.
+            //       This needs to be removed when I get to optimizing
+            const new_shard_buffer_size: usize = shard_size * total_shard_count;
+            var new_shard_buffer = try allocator.alloc(u8, new_shard_buffer_size);
+            @memcpy(new_shard_buffer[0..input_buffer.len], input_buffer);
+            return ShardBuffer{
+                .shard_size = shard_size,
+                .count = total_shard_count,
+                .buffer = new_shard_buffer,
+            };
         }
 
         ///
