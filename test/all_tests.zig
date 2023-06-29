@@ -30,7 +30,13 @@ fn testReconstruction(
     const padded_input_size: usize = input_bytes.len + required_padding;
     assert(padded_input_size % data_shard_count == 0);
 
-    const shard_size = @divExact(padded_input_size, data_shard_count);
+    const shard_size: usize = blk: {
+        const shard_size_raw = @divExact(padded_input_size, data_shard_count);
+        const overshoot: usize = shard_size_raw % 8;
+        const padding = if (overshoot == 0) 0 else (8 - overshoot);
+        break :blk shard_size_raw + padding;
+    };
+
     const output_buffer_size: usize = shard_size * total_shard_count;
 
     var output_bytes = try testing_allocator.alloc(u8, output_buffer_size);
