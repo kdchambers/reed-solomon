@@ -118,23 +118,45 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
         /// `inout_buffer` contains the data shards and enough space to write the parity shards
         ///
         pub fn encode(self: *@This(), shard_buffer: *ShardBuffer) void {
+            assert(shard_buffer.shard_size % 8 == 0);
+            const masks: [8]u64 = .{
+                @as(u64, 255) << (8 * 0),
+                @as(u64, 255) << (8 * 1),
+                @as(u64, 255) << (8 * 2),
+                @as(u64, 255) << (8 * 3),
+                @as(u64, 255) << (8 * 4),
+                @as(u64, 255) << (8 * 5),
+                @as(u64, 255) << (8 * 6),
+                @as(u64, 255) << (8 * 7),
+            };
             _ = self;
             {
                 const data_i: usize = 0;
                 const input_shard = shard_buffer.getShard(data_i);
-                for (0..parity_shard_count) |parity_i| {
+                inline for (0..parity_shard_count) |parity_i| {
                     var parity_shard = shard_buffer.getShardMut(data_shard_count + parity_i);
                     const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
                     const mult_table_index: usize = encoding_matrix_parity_row[0] * @as(usize, 256);
                     const mult_table_row = mult_table[mult_table_index .. mult_table_index + @as(usize, 256)];
-                    for (0..shard_buffer.shard_size) |i| {
-                        parity_shard[i] = mult_table_row[input_shard[i]];
+                    var i: usize = 0;
+                    var mult_value: u64 = 0;
+                    for (0..@divExact(shard_buffer.shard_size, 8)) |_| {
+                        const index_bytes: u64 = @ptrCast(*const u64, @alignCast(@alignOf(u64), &input_shard[i])).*;
+                        inline for (0..8) |x| {
+                            const index: usize = (index_bytes & masks[x]) >> (x * 8);
+                            assert(index <= std.math.maxInt(u8));
+                            mult_value |= @intCast(u64, mult_table_row[index]) << x;
+                        }
+                        @ptrCast(*u64, @alignCast(@alignOf(u64), &parity_shard[i])).* = mult_value;
+                        i += 8;
+                        mult_value = 0;
                     }
                 }
             }
             {
-                for (1..data_shard_count) |data_i| {
+                inline for (1..data_shard_count) |data_i| {
                     const input_shard = shard_buffer.getShard(data_i);
+                    assert(input_shard.len % 8 == 0);
                     for (0..parity_shard_count) |parity_i| {
                         var parity_shard = shard_buffer.getShardMut(data_shard_count + parity_i);
                         const encoding_matrix_parity_row = encoding_matrix.buffer[(data_shard_count + parity_i) * data_shard_count .. ((data_shard_count + parity_i) * data_shard_count) + data_shard_count];
@@ -142,8 +164,19 @@ pub fn Encoder(comptime data_shard_count: u32, comptime parity_shard_count: u32)
                         const columns_per_table: usize = 256;
                         const mult_table_index: usize = mult_table_row_index * columns_per_table;
                         const mult_table_row = mult_table[mult_table_index .. mult_table_index + columns_per_table];
-                        for (0..shard_buffer.shard_size) |i| {
-                            parity_shard[i] ^= mult_table_row[input_shard[i]];
+
+                        var i: usize = 0;
+                        var mult_value: u64 = 0;
+                        for (0..@divExact(shard_buffer.shard_size, 8)) |_| {
+                            const index_bytes: u64 = @ptrCast(*const u64, @alignCast(@alignOf(u64), &input_shard[i])).*;
+                            inline for (0..8) |x| {
+                                const index: usize = (index_bytes & masks[x]) >> (x * 8);
+                                assert(index <= std.math.maxInt(u8));
+                                mult_value |= @intCast(u64, mult_table_row[index]) << x;
+                            }
+                            @ptrCast(*u64, @alignCast(@alignOf(u64), &parity_shard[i])).* ^= mult_value;
+                            i += 8;
+                            mult_value = 0;
                         }
                     }
                 }
